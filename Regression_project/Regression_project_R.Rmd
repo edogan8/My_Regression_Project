@@ -1,0 +1,590 @@
+---
+title: "Regresyon Analizi"
+author: "temel_islemler.Rdm"
+date: "2023-01-04"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+# Öncelikle paketleri aktif hale getirelim.
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(ggpubr)
+library(ISLR)
+library(mice)
+library(readxl)
+```
+
+# Burada verimizi excel'den R'a cekelim.
+
+```{r}
+properaty <- read_excel("C:/Users/emird/OneDrive/Masaüstü/regression_project/properati_argentina_2021_tp1.xls")
+head(properaty)
+names(properaty)
+```
+
+# Datamızda birbirlerini acıklayamayacak ve kullanamayacagımız degiskenler oldugundan verimizin degiskenlerini indirgeyerek yeni bir veri olusturduk.
+
+```{r}
+properaty_data <- properaty[c("property_rooms","property_bedrooms", "property_surface_total",
+                              "property_surface_covered","property_price","pxm2")]
+head(properaty_data)
+```
+
+# Olusturdugumuz yeni verinin degiskenleri arasındaki iliskiyi incelemek icin korelasyon katsayılarına baktık ancak verimizde missing oldugu icin verideki missingleri cıkartıp korelasyon katsayısına yeniden bakmamız gerekmektedir.
+
+```{r}
+cor(properaty_data)
+```
+
+# Missinglerden arınmıs halinin korelasyon katsayısı asagıda gozukmektedir. Bagımlı degisken olarak dusundugum property_price ile bagımsız degiskenlerim arasında pozitif yonlu iliski oldugu gorulmektedir. Bazı bagımsız degiskenler arasında da guclu etkilesimler oldugu gorulmektedir ve bu da multicolinerty sorununun oldugunu gostermektedir.  
+
+```{r}
+cor(na.omit(properaty_data))
+```
+
+# Degiskenler arasındaki iliskiyi grafiksel olarak da gormek istersek ;
+
+```{r}
+pairs(na.omit(properaty_data), pch=19)
+```
+
+# Verimizdeki kayıp gozlemleri gormek istersek md.pattern komutu ile gorebiliriz ve goruldugu uzere 63472 veriden 2155 tanesi missing olarak gorulmektedir. 
+
+```{r}
+md.pattern(properaty_data)
+```
+
+# Sımdı elimizdeki kayıp gozlemleri doldurmak istersek ;
+```{r}
+dolgu <- mice(properaty_data, m=3) # m ile iterasyon sayısı
+```
+
+# Burada herbir degisken icin  dolgu islemi gerceklestirilmis sonuclar gorulmektedir. Her bir sonucu model olusturduktan sonra model uzerinde deneyip en anlamlı sonucu veren sutunu sececegim.
+```{r}
+dolgu$imp
+```
+
+
+```{r}
+names(dolgu$imp)
+```
+
+#Burada 3'u secmemizin sebebi olusturdugumuz modelin daha anlamlı olmasından kaynaklıdır.
+
+```{r}
+properaty_data_dolgu <- complete(dolgu,3)
+#properaty_data_dolgu <- complete(dolgu,2)
+#properaty_data_dolgu <- complete(dolgu,1) 
+
+head(properaty_data_dolgu)
+md.pattern(properaty_data_dolgu)
+```
+
+# Verimizde missing value olmadıgına gore artık model olusturup veri setini train ve test olarak iki gruba ayırabiliriz.
+
+```{r}
+set.seed(123)
+index_data <- sample(1:nrow(properaty_data_dolgu),size = 0.7*nrow(properaty_data_dolgu))
+
+trainset <- properaty_data_dolgu[index_data,]
+testset <- properaty_data_dolgu[-index_data,]
+head(trainset)
+nrow(trainset)
+nrow(testset)
+```
+
+```{r}
+names(properaty_data_dolgu)
+```
+
+# Modelimizi olusturduk ve ozet istatistiklerinde de goruldugu uzere R^2 = 0.6468 elde edilmistir.Ancak bu R^2 acıklama duzeyi yeterli mi, daha arttırılabilir mi diger adımlarda inceleyecegiz. Aynı zamanda p degerine gore model anlamlı cıkmıstır. Aynı sekilde degiskenlerimin hepsi anlamlı cıkmıstır. Sonuclara gore yorumlama yapmak istersek property_rooms'daki 1 birimlik artıs property_price degerindeki 4.745e+04 kadarlık artısa neden olmaktadır. Ve buna benzer cıkarımlar yapılabilir.
+
+```{r}
+model1 <- lm(property_price~property_rooms+property_bedrooms+property_surface_total+
+               property_surface_covered+pxm2, data = trainset)
+summary(model1)
+```
+
+# 1. Grafik icin ; Varyans homojenligi var mı yok mu diye bakıyoruz. Noktaların line etrafında rastgele dagılması istenir ve genel olarak da oyle gozukmektedir.
+# 2. Grafik icin ; Artıkların normal dagılıp dagılmadıgını belirtir. Line uzerinde olması istenir. Gorsel olarak normal dagılıyor denebilir ama test yapılması gerekmektedir.
+# 3. Grafik icin ; Standartlastırılmıs artık degerler icin ve fitted valuelar icin inceliyoruz. 1. grafikle benzer yapıdadırlar.
+# 4. Grafik icin ; Baskınlık grafigidir.
+# Grafiklerele  artıkların dagılısını gormekteyiz. Burada degisen varyans sorunu olabilir. Bu konuda net bir fikir sahibi olabilmek adına test sonuclarına basvurmamız gerekmektedir.
+# Aynı zamanda grafiklerden model1 icerisinde aykırı degerlerin varlıgını da saptayabilmekteyiz.
+
+```{r}
+plot(model1)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+#install.packages("lmtest")
+library(lmtest)
+```
+
+# HO:Heteroscedasticity is not present #H1:Heteroscedasticity is present
+# Yani H0:Heteroscedasticity mevcut degil #H1:Heteroscedasticity mevcut
+
+# Test istatistigi 23402 ve p-value < 2.2e-16 < 0.05 oldugundan H0 yokluk hipotezi reddedilir. Yani regresyon modelimizde heteroscedasticity mevcuttur diyebiliriz. Bir diger degisle degisen varyans durumu vardır da diyebiliriz.
+
+```{r}
+bptest(model1)
+# help(bptest)
+```
+
+# Simdi Model1 icin testset uzerinden tahminler elde edelim ve bu tahminleri metricler uzerinden inceleyelim.
+
+```{r}
+tahmin <- predict(model1, testset)
+head(tahmin)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(caret)
+R2(tahmin, testset$property_price)
+```
+
+```{r}
+RMSE(tahmin, testset$property_price)
+```
+
+```{r}
+MAE(tahmin, testset$property_price)
+```
+
+# Plotları inceledigimizde aykırı degerlerin varlıgı gozle gorulmekteydi. Simdi aykırı deger kontrolu yapalım. Bunu ya Mahalonobis ile ya da Cook Distance ile yapabiliriz.
+
+# Mahalonobis ile ;
+
+```{r}
+#install.packages("outliers")
+#library(outliers)
+#dist <- mahalanobis(trainset, center = colMeans(trainset), cov = cov(trainset))
+#cutoff <- qchisq(p=0.95, df=7)
+#ids <- which(dist > cutoff)
+#trainsetrem <- trainset[-ids,]
+#nrow(trainsetrem)
+```
+
+
+
+# Cook's Distance ile;
+
+```{r}
+dist <- cooks.distance(model1)
+olc1 <- mean(dist)*3
+olc2 <- 4/length(dist)
+olc1;olc2
+```
+
+# olc1, olc2'ye gore daha buyuk gozukmektedir. Her iki olcute gore gozlemlerin indexlerini elde edelim;
+
+```{r}
+olc1index <- which(dist > olc1)
+olc2index <- which(dist > olc2)
+length(olc1index);length(olc2index)
+```
+
+# Bu noktada 1.olcut icin 99 tane aykırı deger varken 2.olcut icin 1581 tane aykırı deger vardır. Plot uzernde aykırı degerleri incelemek istersek grafikten de anlasıldıgı gibi kırmızı line uzerindeki degerler aykırı degerlerdir. Veri icerisinde bulunan bu aykırı degerleri trainset uzerinden cıkarmamız gerekmektedir.
+
+```{r}
+plot(1:length(dist),dist,type = "p",ylim = range(dist)*c(1,0.001))
+abline(h=olc1, col="red")
+```
+
+```{r}
+trainsetrem <- trainset[-olc1index,]
+nrow(trainset);nrow(trainsetrem)
+```
+
+# Simdi aykırı degerlerden arınmıs verimiz ile yeni bir model olusturalım ve bunu bir onceki model ile karsılastıralım. Karsılastırmamızda goruldugu gibi modelin acıklama duzeyi olan R^2 0.6468'ten 0.7813'e yukseliyor. Bu artıs istedigimiz bir durumdur.
+
+```{r}
+model2 <- lm(property_price~property_rooms+property_bedrooms+property_surface_total+
+               property_surface_covered+pxm2, data = trainsetrem)
+summary(model1);summary(model2)
+```
+
+# Model2'nin grafiklerini incelemek istersek ;
+
+```{r}
+plot(model2)
+```
+
+# HO:Heteroscedasticity is not present #H1:Heteroscedasticity is present
+# Yani H0:Heteroscedasticity mevcut degil #H1:Heteroscedasticity mevcut
+
+# Test istatistigi 6096.8 ve p-value < 2.2e-16 < 0.05 oldugundan H0 hipotezi reddedilir. Yani regresyon modelimizde heteroscedasticity mevcuttur diyebiliriz. 
+
+```{r}
+bptest(model2)
+```
+# AIC VE BIC metriclerine de bakılırsa model2 daha iyi gozukmektedir.
+
+```{r}
+AIC(model1,k=7);AIC(model2,k=7)
+BIC(model1);BIC(model2)
+```
+
+```{r}
+tahmin2 <- predict(model2, testset)
+head(tahmin2)
+```
+# Burada ise R2, RMSE ve MAE metricklerinde model1'in daha iyi sonuc verdigi gorulmektedir.
+
+```{r}
+R2(tahmin2, testset$property_price)
+RMSE(tahmin2, testset$property_price)
+MAE(tahmin2, testset$property_price)
+```
+
+```{r}
+R2(tahmin, testset$property_price)
+RMSE(tahmin, testset$property_price)
+MAE(tahmin, testset$property_price)
+```
+
+# Model2'nin plotlarına baktıgımızda aykırıların varlıgı halen dikkat cekmektedir. Modeli daha iyi bir hale sokmak icin bir kez daha aykırılardan arındırarak yeni bir model kurmak istersek ;
+
+```{r}
+dist2 <- cooks.distance(model2)
+head(dist2)
+```
+
+
+```{r}
+olc3 <- mean(dist2)*3
+olc4 <- 4/length(dist2)
+olc3;olc4
+```
+
+
+```{r}
+olc3index <- which(dist2 > olc3)
+olc4index <- which(dist2 > olc4)
+length(olc3index);length(olc4index)
+```
+
+```{r}
+trainsetrem2 <- trainsetrem[-olc4index,]
+nrow(trainsetrem2)
+```
+# Yeni modelimiz olan model3 R^2 degerine bakılırsa model2'den oldukca iyi gorunmektedir. 
+
+```{r}
+model3 <- lm(property_price~property_rooms+property_bedrooms+property_surface_total+
+               property_surface_covered+pxm2, data = trainsetrem2)
+summary(model2);summary(model3)
+```
+# HO:Heteroscedasticity is not present #H1:Heteroscedasticity is present
+# Yani H0:Heteroscedasticity mevcut degil #H1:Heteroscedasticity mevcut
+
+# Test istatistigi 6228 ve p-value < 2.2e-16 < 0.05 oldugundan H0 hipotezi reddedilir. Yani regresyon modelimizde heteroscedasticity mevcuttur diyebiliriz. 
+
+```{r}
+bptest(model3)
+```
+# Model3'un plotlarına da bakmak istersek ;
+
+
+```{r}
+plot(model3)
+```
+
+```{r}
+hist(residuals(model3, xlab = "Residuals", main = ""))
+```
+
+# Model karsılastırma  metriclerini testverisi ustunden inceleyelim ;
+
+```{r}
+predictions <- predict(model3, testset)
+head(predictions)
+```
+
+# Sectigimiz model olan model3 icin diger metrickleri incelersek ;
+# Burada da az once oldugu gibi bir onceki model daha iyi gozukuyor ancak Adj. R^2 'de ciddi bir artıs gorulmektedir. Bu sebepten dolayı model3 ile yola devam ediyoruz.
+
+```{r, warning=FALSE, message=FALSE}
+library("caret")
+R2(predictions, testset$property_price)
+RMSE(predictions,testset$property_price)
+MAE(predictions,testset$property_price)
+```
+
+```{r}
+predictions2 <- predict(model2, testset)
+head(predictions2)
+```
+
+```{r}
+R2(predictions2, testset$property_price)
+RMSE(predictions2, testset$property_price)
+MAE(predictions2, testset$property_price)
+```
+
+# Daha onceden verimizdeki degiskenlerin korelasyon katsayılarına bakarak coklu baglantı sorunu oldugunu soylemistik. Bunu belirlemek istersek ;
+# vif > 10 olması durumu coklu baglantıyı gostermektedir. Bu veri icin property_surface_covered > 10 oldugundan veri setinden cıkartarak yeniden inceleyebiliriz ;
+
+```{r, warning=FALSE, message=FALSE}
+library(car)
+vif(model3)
+```
+
+# Goruldugu uzere modelvif_1 icin coklu baglantı sorunu gozukmemektedir. Ancak summary'sine bakıldıgında property_bedrooms degiskeni anlamsız cıkmıstır. Bunu modelden cıkartıp yeni bir model olusturabiliriz.
+
+
+```{r}
+modelvif_1 <- lm(property_price~property_rooms+property_bedrooms+property_surface_total+pxm2,data = trainsetrem2)
+vif(modelvif_1)
+```
+
+```{r}
+summary(modelvif_1);summary(model3)
+```
+# Her ne kadar model3 modelvif_2'den daha iyi gozukse de modelvif_2'de hem coklu baglantı sorunu ortadan kalkmıs hem de bu islemden sonra anlamsız hale gelen "property_bedrooms" degiskeni modelden cıkartılmıstır.
+
+```{r}
+modelvif_2 <- lm(property_price~property_rooms+property_surface_total+pxm2,data = trainsetrem2)
+vif(modelvif_2)
+summary(modelvif_2);summary(model3)
+```
+
+# Zaten modelvif_1'e asamalı regresyon uygularsak nihai olarak modelvif_2'yi verecektir.
+
+```{r}
+#modelvif_1 <- lm(property_price~property_rooms+property_bedrooms+property_surface_total+pxm2,data = #trainsetrem2)
+
+#step(lm(property_price~1, data = trainsetrem2), direction = "both",
+#     scope = ~property_rooms+property_bedrooms+property_surface_total+pxm2)
+```
+
+
+# Kurdugumuz modellere tekrardan bakarsak modelin anlamlılık duzeyi oldukca iyi bir seviyeye gelmistir ve modeldeki coklu baglantı sorununu ortadan kalkmıstır. 
+
+```{r}
+summary(model2);summary(model3);summary(modelvif_1);summary(modelvif_2)
+```
+# HO:Heteroscedasticity is not present #H1:Heteroscedasticity is present
+# Yani H0:Heteroscedasticity mevcut degil #H1:Heteroscedasticity mevcut
+
+# Test istatistigi 9128.2 ve p-value < 2.2e-16 < 0.05 oldugundan H0 hipotezi reddedilir. Yani regresyon modelimizde heteroscedasticity mevcuttur diyebiliriz. 
+
+```{r}
+bptest(modelvif_2)
+```
+
+```{r}
+plot(modelvif_2)
+```
+
+# Model3 ile modelvif_2 karsılastırıdıgında daha once de oldugu gibi yine bir onceki model daha iyi cıksa da modelimizdeki coklu baglantı sorunu ortadan kalktıgı icin bu durumu yeglemek durumunda oluyoruz.
+
+```{r}
+testset_vif2 <- testset[-2]
+tahmin_vif2 <- predict(modelvif_2, testset_vif2)
+```
+
+
+```{r}
+R2(tahmin_vif2, testset_vif2$property_price)
+RMSE(tahmin_vif2, testset_vif2$property_price)
+MAE(tahmin_vif2, testset_vif2$property_price)
+```
+
+
+```{r}
+R2(predictions, testset$property_price)
+RMSE(predictions,testset$property_price)
+MAE(predictions,testset$property_price)
+```
+
+# Hatalar normal midir ?
+# Normallik icin artıklar line'ı yaklasık olarak takip etmelidir. Grafige bakılırsa kuyruk kısmımlarında linedan sapmalar gozukse de orneklemimizin buyuklugunu de goz onunde bulundurursak genel olarak line etrafındadır diyebiliriz.
+
+```{r}
+qqnorm(residuals(modelvif_2), ylab = "residuals", main = "Model QQPLOT", col="blue", 
+       col.main = "red", font.lab=1.5, col.lab="gray", col.axis="gray")
+qqline(residuals(modelvif_2), col="red")
+```
+# Histogram ve yogunluk grafiklerine bakılırsa da modelin normal dagıldıgı gorulmektedir.
+
+```{r}
+hist(residuals(modelvif_2), xlab = "residuals", main = "")
+```
+
+
+```{r}
+plot(density(residuals(modelvif_2),na.rm = T),main="Model Yogunluk Grafigi",col="darkgoldenrod4",col.main="darkgoldenrod3")
+```
+
+# Peki ya modelimiz icin varyans homojen mi ?
+# Grafik uzerinden baktıgımızda hataların artan veya azalan olmaması, sabit olup belli bir line etrafında dagılması gerekmektedir. Ancak burada boyle bir durum soz konusu olmadıgından degisken varyans durumu vardır diyebiliriz. Grafiklerin yanı sıra bunu Breusch-Pagan testi ile destekleyebiliriz.
+
+```{r}
+plot(fitted(modelvif_2),residuals(modelvif_2),xlab="Fitted",ylab="Residuals")
+abline(h=0)
+```
+
+```{r}
+plot(fitted(modelvif_2),sqrt(abs(residuals(modelvif_2))), xlab="Fitted",ylab=
+expression(sqrt(hat(epsilon))))
+```
+
+# Ayrıca artıkların karelerinin tum bagımsız degiskenler uzerine regresyonu kurularak olusan modelin anlamlılıgına bakılabilir. Eger model anlamlı cıkar ise degisen varyans sorunu vardır.
+# Burada kurmus oldugumuz model anlamlı cıkmıstır ve bu da modeldeki degisen varyans sorununa bir diger isarettir.
+
+```{r}
+artık <-residuals(modelvif_2)
+bpmod<-lm(artık^2~.,data=trainsetrem2)
+summary(bpmod)
+```
+
+# Breusch-Pagan testine de bakarak modelimizdeki degisen varyans sorununu gorebiliriz.
+
+```{r, warning=FALSE, message=FALSE}
+library(lmtest)
+bptest(modelvif_2)
+```
+
+# Hataların iliskili olma durumuna (otokorelasyon'a) bakmak istersek kuracagımız grafikte hataların orijin etrafında rastgele dagılması beklenir. Bu durum soz konusu olursa otokorelasyon sorunu olmadıgı anlasılacaktır.
+
+```{r}
+n <- length(residuals(modelvif_2))
+plot(tail(residuals(modelvif_2),n-1) ~ head(residuals(modelvif_2),n-1), xlab = expression(hat(epsilon)[i]),ylab = expression(hat(epsilon)[i+1]))
+abline(h=0,v=0,col=grey(0.75))
+```
+
+# Otokorelasyon sorununun olmadıgını desteklemek adına birkac islem daha yapmak istersek epsilon[i] ve epsilon[i+1] arasında bir model kurup bu modelin anlamlı olmamasını bekleriz.
+
+```{r}
+summary(lm(tail(residuals(modelvif_2),n-1)~ head(residuals(modelvif_2),n-1)-1))
+```
+
+# Desteklemek icin Durbin-Watson test istatistigine ve Breusch-Godfrey test istatistigine de bakabiliriz.
+# H0:Hatalar arasında korelasyon yoktur # H1:Hatalar arasında korelasyon vardır.
+# Burada da gorulecegi uzere H0 hipotezi reddedilemez. Yani hatalar arasına korelasyon yoktur. Bu fonksiyonun hesaplamıs oldugu DW degeri 0 ile 4 arasında deger almaktadır ve 2 degerine yakın olması(burada oldugu gibi) otokorelasyon olmadıgına isarettir.
+
+```{r, warning=FALSE, message=FALSE}
+require(lmtest)
+dwtest(property_price~property_rooms+property_surface_total+pxm2,data = trainsetrem2)
+```
+
+# H0:Hatalar arasında korelasyon yoktur # H1:Hatalar arasında korelasyon vardır.
+# Burada da gorulmektedir ki H0 reddedilemez. Durbin-Watson testinde soyledigimiz aynı seyleri burada da soyleyebilmekteyiz.
+
+```{r, warning=FALSE, message=FALSE}
+lmtest::bgtest(modelvif_2,order = 2)
+```
+# Son olarak kararlastırdıgımız model olan modelvif_2 ile coklu baglantı sorunu olan ve bu sebepten icerisinde anlamsız olmasına ragmen anlamlı gozuktugunden icerisinde fazladan degisken olan model3 arasında MAPE karsılastırması yaparsak ;
+# model2, model3 ve modelvif_2'nin yuzdelik hatalarını inceledigimizde bu oran model3'te en dusuktur. Ancak coklu baglantı sorunu olmayan modelvif_2 ile arasında gozardı edilebilir bir fark vardır.
+
+```{r}
+model1Pred <- predict(modelvif_2, testset_vif2)
+model1PredData <- data.frame("actuals"=testset_vif2$property_price,
+                             "predictions"=model1Pred)
+head(model1PredData)
+```
+
+# modelvif_2 ' nin yuzdelik hatası
+
+```{r}
+model1MAPE <- mean(abs(model1PredData$actuals - model1PredData$predictions)/model1PredData$actuals)
+model1MAPE
+```
+
+```{r}
+model2Pred <- predict(model3, testset)
+model2PredData <- data.frame("actuals"=testset$property_price,
+                             "predictions"=model2Pred)
+head(model2PredData)
+```
+
+# model3 ' un yuzdelik hatası
+
+```{r}
+model2MAPE <- mean(abs(model2PredData$actuals - model2PredData$predictions)/model2PredData$actuals)
+model2MAPE
+```
+
+```{r}
+model3Pred <- predict(model2, testset)
+model3PredData <- data.frame("actuals"=testset$property_price,
+                             "predictions"=model3Pred)
+head(model3PredData)
+```
+
+# model2 ' nin yuzdelik hatası
+
+```{r}
+model3MAPE <- mean(abs(model3PredData$actuals - model3PredData$predictions)/model3PredData$actuals)
+model3MAPE
+```
+
+# Nihayi olarak sectigimiz model olan "modelvif_2" son kez incelenilmek istenirse ;
+# modelvif_2 aykırı degerlerden arındırılmıs, kayıp gozlemşerine dolgu islemi gerceklestirilmis, model olusturulurken test ve egitim olarak bolunmus, hataların dagılımının normalligi tespit edilmis, coklu baglantı sorunu olusturabilecek degiskenlerden arındırılmıs, otokorelasyon durumunun olmadıgı saptanmıstır.
+# Ancak bu modelde goruldugu uzere degisen varyans durumu soz konusudur. Coklu baglantı durumuna eslik eden nonlineartiy durumu olsaydı degiskenlere donusum yapmak gerekirdi. Ancak burada degisen varyans durumu yalnız gorundugunden agırlıklandırılmıs en kucuk kareler yontemi yeterli olacaktır.
+
+# Son olarak bu degisen varyans sorununu ortadan kaldırmak istersek.
+
+```{r}
+resid<-residuals(modelvif_2)
+kareresid<-resid^2
+pred<-predict(modelvif_2)
+
+pairs(~kareresid+resid+property_rooms + property_surface_total + 
+    pxm2+pred,data=trainsetrem2,main="Simple Scatterplot Matrix")
+```
+
+```{r}
+mod<-lm(abs(resid)~property_rooms + property_surface_total + 
+    pxm2,data=trainsetrem2)
+weights<-1/predict(mod)^2
+weightedmodel<-lm(property_price ~ property_rooms + property_surface_total + 
+    pxm2,data=trainsetrem2,weight=weights)
+summary(weightedmodel)
+```
+
+```{r}
+weightedresid<-diag(sqrt(weights))%*%residuals(weightedmodel)
+par(mfrow=c(3,6))
+plot(trainsetrem2$property_rooms,resid)
+plot(trainsetrem2$property_rooms,diag(sqrt(weights))%*%weightedresid)
+
+plot(trainsetrem2$property_surface_total,resid)
+plot(trainsetrem2$property_surface_total,diag(sqrt(weights))%*%weightedresid)
+
+plot(trainsetrem2$pxm2,resid)
+plot(trainsetrem2$pxm2,diag(sqrt(weights))%*%weightedresid)
+```
+
+```{r}
+bpmod<-lm((weightedresid)^2~property_rooms + property_surface_total + 
+    pxm2,data=trainsetrem2)
+summary(bpmod)
+```
+
+```{r}
+bptest(property_price ~ property_rooms + property_surface_total + 
+    pxm2,data=trainsetrem2,weight=weights)
+```
+# Goruldugu uzere uygun olmayan son varsayım konrtolumuz olan degisken varyans sorunu da ortadan kaldırılmıstır.
+
+
+
+
+
+
+
+
+
+
+
+
+
